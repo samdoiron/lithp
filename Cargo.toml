@@ -1,0 +1,6 @@
+[package]
+name = "lithp"
+version = "0.1.0"
+authors = ["samdoiron <sam.doiron96@gmail.com>"]
+
+[dependencies]
