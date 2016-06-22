@@ -1,5 +1,5 @@
-#[derive(Debug, PartialEq, Eq)]
-enum Token {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Token {
     OpenParen,
     CloseParen,
     Identifier(String),
@@ -7,16 +7,31 @@ enum Token {
     Integer(u64)
 }
 
-type TokenResult<T> = Result<T, &'static str>;
+pub type TokenResult<T> = Result<T, &'static str>;
+type ParseResult = Result<Vec<Token>, &'static str>;
 
 // Input must be formatted so that each token is separated by a space.
-fn tokenize(program: &str) -> TokenResult<Vec<Token>> {
+pub fn tokenize(program: &str) -> TokenResult<Vec<Token>> {
     let mut tokens = vec![];
     for token in program.split_whitespace() {
         let token = try!(match_token(token));
         tokens.push(token);
     }
+    tokens.reverse();
     Ok(tokens)
+}
+
+pub fn parse(tokens: Vec<Token>) {
+    println!("S -> Atoms");
+    let result = parse_atoms(tokens);
+    match result {
+        Ok(vec) => {
+            if vec.len() > 0 {
+                println!("Syntax Error");
+            }
+        },
+        Err(_) => println!("Syntax Error")
+    }
 }
 
 fn match_token(token: &str) -> TokenResult<Token> {
@@ -35,149 +50,85 @@ fn match_long_token(token: &str) -> TokenResult<Token> {
     if token.chars().all(|c| c.is_digit(10)) {
         Ok(Token::Integer(token.parse::<u64>().unwrap()))   
     } else {
-        Err("non-alphabetic long token")
+        Ok(Token::Identifier(token.to_string()))
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum ParseAction {
-    Production(&'static str, &'static str),
-    SyntaxError
+fn print_production(lhs: &'static str, rhs: &str) {
+    println!("{} -> {}", lhs, rhs);
 }
 
-fn parse(mut tokens: Vec<Token>) -> Vec<ParseAction> {
-    parse_atoms(tokens);
-}
-
-fn parse_atoms(mut tokens: Vec<Token>) -> (Vec<Token>, Vec<ParseAction>) {
-    let first_token = tokens.pop();
-    if first_token.is_none() {
-        return (tokens, vec![ParseAction::SyntaxError]);
+fn parse_atoms(tokens: Vec<Token>) -> ParseResult {
+    if tokens.len() == 0 {
+        println!("Atoms -> ");
+        return Ok(tokens);
     }
+    let token = tokens[tokens.len() - 1].clone();
 
-    match first_token.unwrap() {
-        Token::CloseParen => vec![ParseAction::Production("Atoms", "")],
-        Token::Quote
-            | Token::Identifier(_)
-            | Token::Integer(_)
-            | Token::OpenParen
-            => {
-                let mut actions = vec![
-                    ParseAction::Production("Atoms", "Atom Atoms"),
-                ];
-                let (mut after_atom, atom_actions) = parse_atom(tokens);
-                let (mut after_atoms, atoms_actions) = parse_atoms(with_atom);
-
-                actions.append(atom_actions).append(atoms_actions);
-                return (after_atoms, actions);
-            },
-        _ => vec![ParseAction::SyntaxError]
+    match token {
+        Token::CloseParen => {
+            print_production("Atoms", "");
+            Ok(tokens)
+        }
+        _ => {
+                print_production("Atoms", "Atom Atoms");
+                let after_atom = try!(parse_atom(tokens));
+                let after_atoms = try!(parse_atoms(after_atom));
+                Ok(after_atoms)
+        }
     }
 }
 
-fn parse_atom(tokens: Vec<Token>) -> (Vec<Token>, Vec<ParseAction>) {
-    return vec![];
+fn parse_atom(mut tokens: Vec<Token>) -> ParseResult {
+    if tokens.len() == 0 {
+        return Err("no tokens given to parse_atom");
+    }
+    let token = tokens[tokens.len() - 1].clone();
+
+    match token {
+        Token::Quote => {
+            print_production("Atom", "' Atom");
+            tokens.pop();
+            let remaining = try!(parse_atom(tokens));
+            Ok(remaining)
+        },
+        Token::OpenParen => {
+            print_production("Atom", "List");
+            let remaining = try!(parse_list(tokens));
+            Ok(remaining)
+        },
+        Token::Identifier(name) => {
+            println!("Atom -> id[{}]", name);
+            tokens.pop();
+            Ok(tokens)
+        },
+        Token::Integer(number) => {
+            println!("Atom -> int[{}]", number);
+            tokens.pop();
+            Ok(tokens)
+        },
+        _ => Err("unexpected token in parse_atom")
+    }
 }
 
-#[cfg(test)]
-#[allow(non_snake_case)]
-mod tests {
-    use super::{tokenize, parse, Token, ParseAction};
-
-    #[test]
-    fn tokenize__empty_string__no_tokens() {
-        let tokens = unwrap_tokens("");
-        assert_eq!(tokens.len(), 0);
+fn parse_list(mut tokens: Vec<Token>) -> ParseResult {
+    println!("List -> ( ListBody )");
+    let open = tokens.pop();
+    if open.is_none() || open.unwrap() != Token::OpenParen {
+        return Err("list did not start with (");
     }
 
-    #[test]
-    fn tokenize__single_token__returns_token() {
-        assert_tokenizes_to(vec![Token::OpenParen], "(")
+    let mut after_body = try!(parse_list_body(tokens));
+
+    let close = after_body.pop();
+    if close.is_none() || close.unwrap() != Token::CloseParen {
+        return Err("list did not ent with )");
     }
 
-    #[test]
-    fn tokenize__both_parens__returns_both() {
-        assert_tokenizes_to(vec![Token::OpenParen, Token::CloseParen], "( )")
-    }
+    Ok(after_body)
+}
 
-    #[test]
-    fn tokenize__identifier__contains_given_value() {
-        assert_tokenizes_to(vec![Token::Identifier("hello".to_string())],
-                            "hello")
-    }
-
-    #[test]
-    fn tokenize__int_literal__contains_given_value() {
-        assert_tokenizes_to(vec![Token::Integer(123)], "123")
-    }
-
-    #[test]
-    fn tokenize__identifier_starts_with_number__is_invalid() {
-        let result = tokenize("123abc");
-        assert!(result.is_err())
-    }
-
-    #[test]
-    fn tokenize__containing_quote__returns_quote() {
-        assert_tokenizes_to(vec![Token::Quote], "'");
-    }
-
-    #[test]
-    fn tokenize__large_example__returns_correct_tokens() {
-        assert_tokenizes_to(
-            vec![
-                Token::OpenParen,
-                Token::Identifier("define".to_string()),
-                Token::Quote,
-                Token::Identifier("hello".to_string()),
-                Token::Integer(123),
-                Token::CloseParen
-            ],
-            "( define ' hello 123 )"
-        );
-    }
-
-    #[test]
-    fn parse__empty_string__atoms_to_epsilon() {
-        assert_parses_to(
-            vec![
-                ParseAction::Production("S", "Atoms"),
-                ParseAction::Production("Atoms", "")
-            ],
-            ""
-        );
-    }
-
-    #[test]
-    fn parse__assignment_example_2__syntax_error() {
-        assert_parses_to(
-            vec![
-                ParseAction::Production("S", "Atoms"),
-                ParseAction::Production("Atoms", "Atom Atoms"),
-                ParseAction::Production("Atom", "List"),
-                ParseAction::Production("List", "( ListBody )"),
-                ParseAction::Production("ListBody", "Atoms"),
-                ParseAction::Production("Atoms", "Atom Atoms"),
-                ParseAction::Production("Atom", "'"),
-                ParseAction::SyntaxError
-            ],
-            "( ' )"
-        )
-    }
-
-    fn assert_parses_to(expected: Vec<ParseAction>, program: &'static str) {
-        let mut tokens = unwrap_tokens(program);
-        let actual = parse(tokens);
-        assert_eq!(expected, actual);
-    }
-
-    fn assert_tokenizes_to(expected: Vec<Token>, program: &'static str) {
-        let actual = unwrap_tokens(program);
-        assert_eq!(expected, actual);
-    }
-
-    fn unwrap_tokens(program: &'static str) -> Vec<Token> {
-        let result = tokenize(program);
-        result.expect(&format!("token stream '{}' should be valid", program))
-    }
+fn parse_list_body(tokens: Vec<Token>) -> ParseResult {
+    println!("ListBody -> Atoms");
+    parse_atoms(tokens)
 }
