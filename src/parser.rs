@@ -54,24 +54,20 @@ fn match_long_token(token: &str) -> TokenResult<Token> {
     }
 }
 
-fn print_production(lhs: &'static str, rhs: &str) {
-    println!("{} -> {}", lhs, rhs);
-}
-
 fn parse_atoms(tokens: Vec<Token>) -> ParseResult {
     if tokens.len() == 0 {
-        println!("Atoms -> ");
+        println!("Atoms ->");
         return Ok(tokens);
     }
     let token = tokens[tokens.len() - 1].clone();
 
     match token {
         Token::CloseParen => {
-            print_production("Atoms", "");
+            println!("Atoms ->");
             Ok(tokens)
         }
         _ => {
-                print_production("Atoms", "Atom Atoms");
+                println!("Atoms -> Atom Atoms");
                 let after_atom = try!(parse_atom(tokens));
                 let after_atoms = try!(parse_atoms(after_atom));
                 Ok(after_atoms)
@@ -87,13 +83,13 @@ fn parse_atom(mut tokens: Vec<Token>) -> ParseResult {
 
     match token {
         Token::Quote => {
-            print_production("Atom", "' Atom");
+            println!("Atom -> ' Atom");
             tokens.pop();
             let remaining = try!(parse_atom(tokens));
             Ok(remaining)
         },
         Token::OpenParen => {
-            print_production("Atom", "List");
+            println!("Atom -> List");
             let remaining = try!(parse_list(tokens));
             Ok(remaining)
         },
