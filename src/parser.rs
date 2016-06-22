@@ -4,7 +4,7 @@ pub enum Token {
     CloseParen,
     Identifier(String),
     Quote,
-    Integer(u64)
+    Integer(String)
 }
 
 pub type TokenResult<T> = Result<T, &'static str>;
@@ -48,7 +48,7 @@ fn match_long_token(token: &str) -> TokenResult<Token> {
     assert!(!token.is_empty());
 
     if token.chars().all(|c| c.is_digit(10)) {
-        Ok(Token::Integer(token.parse::<u64>().unwrap()))   
+        Ok(Token::Integer(token.to_string()))
     } else {
         Ok(Token::Identifier(token.to_string()))
     }
