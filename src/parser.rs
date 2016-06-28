@@ -66,12 +66,10 @@ pub fn parse(tokens: Vec<Token>) {
         Ok(parsed) => {
             if parsed.remaining.len() > 0 {
                 // Left over tokens not part of any production.
-                println!("Error: unparsed tokens {:?}", parsed.remaining);
-            } else {
-                println!("Value: {:?}", parsed.value);
+                println!("Syntax Error");
             }
         },
-        Err(msg) => println!("Error: {}", msg)
+        Err(_) => println!("Syntax Error")
     }
 }
 
@@ -108,17 +106,18 @@ fn parse_atoms(tokens: Vec<Token>, is_quoted: bool) -> ParseResult<Vec<Atom>> {
     match token {
         Token::CloseParen => {
             // Atoms ->
-            Ok(Parsed{
-                remaining: tokens,
-                value: vec![],
-                parsed_tree: Atom::List(vec![])
-            })
+            Ok(Parsed{remaining: tokens,
+                      value: vec![],
+                      parsed_tree: Atom::List(vec![])})
         },
         _ => {
             // Atoms -> Atom Atoms
             let atom = try!(parse_atom(tokens, is_quoted));
-            let atom_value = if is_quoted { atom.value } else { try!(eval(atom.value)) };
-            println!("eval( {} ) -> {}", atom.parsed_tree, atom_value);
+            let mut atom_value = atom.value;
+            if !is_quoted {
+                atom_value = try!(eval(atom_value));
+                println!("eval( {} ) -> {}", atom.parsed_tree, atom_value);
+            } 
 
             let mut atoms = try!(parse_atoms(atom.remaining, is_quoted));
             let mut atoms_tree = match atoms.parsed_tree {
@@ -145,6 +144,13 @@ fn parse_atom(mut tokens: Vec<Token>, is_quoted: bool) -> ParseResult<Atom> {
         Token::Quote => {
             // Atom -> ' Atom
             tokens.pop();
+
+            // Occurs due to implementation detail of example solution,
+            // duplicate just in case.
+            if !is_quoted {
+                println!("eval( ' ) -> '")
+            }
+
             let atom = try!(parse_atom(tokens, true));
             Ok(Parsed{remaining: atom.remaining,
                       value: Atom::Quoted(Box::new(atom.value)),
@@ -219,6 +225,7 @@ fn apply(car: &Atom, cdr: &[Atom]) -> Result<Atom, &'static str> {
                 "car" => apply_car(cdr),
                 "cdr" => apply_cdr(cdr),
                 "cons" => apply_cons(cdr),
+                "list" => apply_list(cdr),
                 _ => Err("unknown function")
             }
         },
@@ -282,6 +289,10 @@ fn apply_cons(cdr: &[Atom]) -> Result<Atom, &'static str> {
         &Atom::List(ref vals) => Ok(Atom::List(prepend(cdr[0].clone(), &mut vals.clone()))),
         _ => Err("invalid type to cons() onto")
     }
+}
+
+fn apply_list(cdr: &[Atom]) -> Result<Atom, &'static str> {
+    Ok(Atom::List(cdr.to_vec()))
 }
 
 fn prepend<T>(item: T, items: &mut Vec<T>) -> Vec<T> {
