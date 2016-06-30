@@ -1,6 +1,11 @@
+mod util;
+mod atom;
+mod eval;
+mod tokenizer;
 mod parser;
 
-use parser::{tokenize, parse};
+use tokenizer::tokenize;
+use parser::parse;
 use std::io::{self, Read};
 
 fn main() {
