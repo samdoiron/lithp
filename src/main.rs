@@ -5,7 +5,7 @@ mod tokenizer;
 mod parser;
 
 use tokenizer::tokenize;
-use parser::parse;
+use parser::Parser;
 use std::io::{self, Read};
 
 fn main() {
@@ -14,5 +14,5 @@ fn main() {
         .expect("failed to read from stdin");
     let tokens = tokenize(&program)
         .expect("invalid tokens given");
-    parse(tokens);
+    Parser::new(tokens).parse();
 }

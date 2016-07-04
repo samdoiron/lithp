@@ -6,9 +6,13 @@ use util::prepend;
 use eval::eval;
 
 struct Parsed<T> {
-    remaining: Vec<Token>,
     value: T,
     parsed_tree: Atom
+}
+
+pub struct Parser {
+    tokens: Vec<Token>,
+    is_quoted: bool
 }
 
 impl Display for Atom {
@@ -35,135 +39,125 @@ impl Display for Atom {
 
 type ParseResult<T> = Result<Parsed<T>, &'static str>;
 
-pub fn parse(tokens: Vec<Token>) {
-    let result = parse_atoms(tokens, false);
-    match result {
-        Ok(parsed) => {
-            if parsed.remaining.len() > 0 {
-                // Left over tokens not part of any production.
-                println!("Syntax Error");
-            }
-        },
-        Err(_) => println!("Syntax Error")
-    }
-}
-
-fn parse_atoms(tokens: Vec<Token>, is_quoted: bool) -> ParseResult<Vec<Atom>> {
-    if tokens.len() == 0 {
-        // Atoms ->
-        return Ok(Parsed{
-            remaining: tokens,
-            value: vec![],
-            parsed_tree: Atom::List(vec![])
-        })
-    }
-    let token = tokens[tokens.len() - 1].clone();
-
-    match token {
-        Token::CloseParen => {
-            // Atoms ->
-            Ok(Parsed{remaining: tokens,
-                      value: vec![],
-                      parsed_tree: Atom::List(vec![])})
-        },
-        _ => {
-            // Atoms -> Atom Atoms
-            let atom = try!(parse_atom(tokens, is_quoted));
-            let mut atom_value = atom.value;
-            if !is_quoted {
-                atom_value = try!(eval(atom_value));
-                println!("eval( {} ) -> {}", atom.parsed_tree, atom_value);
-            } 
-
-            let mut atoms = try!(parse_atoms(atom.remaining, is_quoted));
-            let mut atoms_tree = match atoms.parsed_tree {
-                Atom::List(val) => val,
-                _ => unreachable!()
-            };
-
-            Ok(Parsed{
-                remaining: atoms.remaining,
-                parsed_tree: Atom::List(prepend(atom.parsed_tree, &mut atoms_tree)),
-                value: prepend(atom_value, &mut atoms.value)
-            })
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Parser {
+        Parser {
+            tokens: tokens,
+            is_quoted: false
         }
     }
-}
 
-fn parse_atom(mut tokens: Vec<Token>, is_quoted: bool) -> ParseResult<Atom> {
-    if tokens.len() == 0 {
-        return Err("no tokens given to parse_atom");
+    pub fn parse(&mut self) {
+        match self.parse_atoms() {
+            Ok(parsed) => {
+                if self.tokens.len() > 0 {
+                    // Left over tokens not part of any production.
+                    println!("Syntax Error");
+                }
+            },
+            Err(_) => println!("Syntax Error")
+        }
     }
-    let token = tokens[tokens.len() - 1].clone();
 
-    match token {
-        Token::Quote => {
-            // Atom -> ' Atom
-            tokens.pop();
+    fn parse_atoms(&mut self) -> ParseResult<Vec<Atom>> {
+        if self.tokens.len() == 0 {
+            // Atoms ->
+            return Ok(Parsed{
+                value: vec![],
+                parsed_tree: Atom::List(vec![])
+            })
+        }
+        
+        let first_token = self.tokens[self.tokens.len() - 1].clone();
 
-            // Occurs due to implementation detail of example solution,
-            // duplicate just in case.
-            if !is_quoted {
-                println!("eval( ' ) -> '")
+        match first_token {
+            Token::CloseParen => {
+                // Atoms ->
+                Ok(Parsed{value: vec![],
+                          parsed_tree: Atom::List(vec![])})
+            },
+            _ => {
+                // Atoms -> Atom Atoms
+                let atom = try!(self.parse_atom());
+                let mut atom_value = atom.value;
+                if !self.is_quoted {
+                    atom_value = try!(eval(atom_value));
+                    println!("eval( {} ) -> {}", atom.parsed_tree, atom_value);
+                } 
+
+                let mut atoms = try!(self.parse_atoms());
+                let mut atoms_tree = match atoms.parsed_tree {
+                    Atom::List(val) => val,
+                    _ => unreachable!()
+                };
+
+                Ok(Parsed{
+                    parsed_tree: Atom::List(prepend(atom.parsed_tree, &mut atoms_tree)),
+                    value: prepend(atom_value, &mut atoms.value)
+                })
             }
-
-            let atom = try!(parse_atom(tokens, true));
-            Ok(Parsed{remaining: atom.remaining,
-                      value: Atom::Quoted(Box::new(atom.value)),
-                      parsed_tree: Atom::Quoted(Box::new(atom.parsed_tree))})
-        },
-        Token::OpenParen => {
-            // Atom -> List
-            let list = try!(parse_list(tokens, is_quoted));
-            Ok(Parsed{remaining: list.remaining,
-                      value: Atom::List(list.value),
-                      parsed_tree: list.parsed_tree})
-        },
-        Token::Identifier(name) => {
-            // Atom -> id
-            tokens.pop();
-            Ok(Parsed{remaining: tokens,
-                      value: Atom::Identifier(name.clone()),
-                      parsed_tree: Atom::Identifier(name)})
-        },
-        Token::Integer(number) => {
-            // Atom -> int
-            tokens.pop();
-            Ok(Parsed{remaining: tokens,
-                      value: Atom::Integer(number),
-                      parsed_tree: Atom::Integer(number)})
-        },
-        _ => Err("unexpected token in parse_atom")
+        }
     }
-}
 
-fn parse_list(mut tokens: Vec<Token>, is_quoted: bool) -> ParseResult<Vec<Atom>> {
-    // List -> ( ListBody )
-    if tokens.pop() != Some(Token::OpenParen) {
-        return Err("list did not start with (");
+    fn parse_atom(&mut self) -> ParseResult<Atom> {
+        if self.tokens.len() == 0 {
+            return Err("no tokens given to parse_atom");
+        }
+        let first_token = self.tokens[self.tokens.len() - 1].clone();
+
+        match first_token {
+            Token::Quote => {
+                // Atom -> ' Atom
+                self.tokens.pop();
+
+                // Occurs due to implementation detail of example solution,
+                // duplicate just in case.
+                if !self.is_quoted {
+                    println!("eval( ' ) -> '")
+                }
+
+                let atom = try!(self.parse_atom());
+                Ok(Parsed{value: Atom::Quoted(Box::new(atom.value)),
+                          parsed_tree: Atom::Quoted(Box::new(atom.parsed_tree))})
+            },
+            Token::OpenParen => {
+                // Atom -> List
+                let list = try!(self.parse_list());
+                Ok(Parsed{value: Atom::List(list.value),
+                          parsed_tree: list.parsed_tree})
+            },
+            Token::Identifier(name) => {
+                // Atom -> id
+                self.tokens.pop();
+                Ok(Parsed{value: Atom::Identifier(name.clone()),
+                          parsed_tree: Atom::Identifier(name)})
+            },
+            Token::Integer(number) => {
+                // Atom -> int
+                self.tokens.pop();
+                Ok(Parsed{value: Atom::Integer(number),
+                          parsed_tree: Atom::Integer(number)})
+            },
+            _ => Err("unexpected token in parse_atom")
+        }
     }
-    let mut body = try!(parse_list_body(tokens, is_quoted));
-    if body.remaining.pop() != Some(Token::CloseParen) {
-        return Err("list did not end with )")
+
+    fn parse_list(&mut self) -> ParseResult<Vec<Atom>> {
+        // List -> ( ListBody )
+        if self.tokens.pop() != Some(Token::OpenParen) {
+            return Err("list did not start with (");
+        }
+        let mut body = try!(self.parse_list_body());
+        if self.tokens.pop() != Some(Token::CloseParen) {
+            return Err("list did not end with )")
+        }
+        Ok(Parsed{value: body.value,
+                  parsed_tree: body.parsed_tree})
     }
-    Ok(Parsed{remaining: body.remaining,
-              value: body.value,
-              parsed_tree: body.parsed_tree})
-}
 
-fn parse_list_body(tokens: Vec<Token>, is_quoted: bool) -> ParseResult<Vec<Atom>> {
-    // ListBody -> Atoms
-    parse_atoms(tokens, is_quoted)
-}
 
-fn parse_let() -> ParseResult<Atom> {
-    Err("unimplemented")
-}
-
-fn parse_let_star() -> ParseResult<Atom> {
-    Err("unimplemented")
-}
-
-fn parse_define() -> ParseResult<Atom> {
-    Err("unimplemented")
+    fn parse_list_body(&mut self) -> ParseResult<Vec<Atom>> {
+        // ListBody -> Atoms
+        self.parse_atoms()
+    }
 }
