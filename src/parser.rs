@@ -158,6 +158,25 @@ impl Parser {
 
     fn parse_list_body(&mut self) -> ParseResult<Vec<Atom>> {
         // ListBody -> Atoms
-        self.parse_atoms()
+        let head_token = self.tokens.last().cloned();
+        match head_token {
+            Some(Token::Identifier(ref x)) if x == "let" => self.parse_let(),
+            Some(Token::Identifier(ref x)) if x == "let*" => self.parse_let_star(),
+            Some(Token::Identifier(ref x)) if x == "define" => self.parse_define(),
+            Some(_) => self.parse_atoms(),
+            None => Err("empty list given as list body")
+        }
+    }
+
+    fn parse_let(&mut self) -> ParseResult<Vec<Atom>> {
+        Err("let unimplemented")
+    }
+      
+    fn parse_let_star(&mut self) -> ParseResult<Vec<Atom>> {
+        Err("let* unimplemented")
+    }
+    
+    fn parse_define(&mut self) -> ParseResult<Vec<Atom>> {
+        Err("define unimplemented")
     }
 }
