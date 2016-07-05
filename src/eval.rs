@@ -2,8 +2,8 @@ use atom::Atom;
 use scope::Scope;
 use util::prepend;
 
-const BUILT_INS: [&'static str; 8] = ["+", "*", "/", "-", "car", "cdr", 
-                                      "cons", "list"];
+const BUILT_INS: [&'static str; 9] = ["define", "+", "-", "*", "/", "cons",
+                                       "car", "cdr", "list"];
 
 pub struct Eval<'a> {
     scope: Scope<'a, Atom>
@@ -70,6 +70,7 @@ impl<'a> Eval<'a> {
                     "cdr" => self.apply_cdr(cdr),
                     "cons" => self.apply_cons(cdr),
                     "list" => self.apply_list(cdr),
+                    "define" => self.apply_define(cdr),
                     _ => Err("unknown function")
                 }
             },
@@ -146,4 +147,14 @@ impl<'a> Eval<'a> {
         Ok(Atom::List(cdr.to_vec()))
     }
 
+    fn apply_define(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
+        if cdr.len() != 2 { return Err("wrong number of arguments for define") }
+        match cdr[0] {
+            Atom::Identifier(ref name) => {
+                self.scope.set(name.clone(), cdr[1].clone() );
+                Ok(Atom::List(vec![]))
+            },
+            _ => Err("first param of define must be an identifier")
+        }
+    }
 }
