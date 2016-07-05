@@ -7,6 +7,7 @@ mod parser;
 
 use tokenizer::tokenize;
 use parser::Parser;
+use eval::Eval;
 use std::io::{self, Read};
 
 fn main() {
@@ -15,5 +16,12 @@ fn main() {
         .expect("failed to read from stdin");
     let tokens = tokenize(&program)
         .expect("invalid tokens given");
-    Parser::new(tokens).parse();
+    let result = match Parser::new(tokens).parse() {
+        Ok(ast) => Eval::new().eval_atoms(ast),
+        other => other
+    };
+    match result {
+        Ok(value) => println!("Result: {}", value),
+        Err(message) => println!("{}", message)
+    }
 }
