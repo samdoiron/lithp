@@ -4,15 +4,19 @@ use tokenizer::Token;
 use atom::Atom;
 use util::prepend;
 use eval::eval;
+use scope::Scope;
 
+#[derive(Debug)]
 struct Parsed<T> {
     value: T,
     parsed_tree: Atom
 }
 
-pub struct Parser {
+#[derive(Debug)]
+pub struct Parser<'a> {
     tokens: Vec<Token>,
-    is_quoted: bool
+    is_quoted: bool,
+    scope: Scope<'a, Atom>
 }
 
 impl Display for Atom {
@@ -39,23 +43,24 @@ impl Display for Atom {
 
 type ParseResult<T> = Result<Parsed<T>, &'static str>;
 
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Parser {
+impl<'a> Parser<'a> {
+    pub fn new(tokens: Vec<Token>) -> Parser<'a> {
         Parser {
             tokens: tokens,
-            is_quoted: false
+            is_quoted: false,
+            scope: Scope::new()
         }
     }
 
     pub fn parse(&mut self) {
         match self.parse_atoms() {
-            Ok(parsed) => {
+            Ok(_) => {
                 if self.tokens.len() > 0 {
                     // Left over tokens not part of any production.
-                    println!("Syntax Error");
+                    println!("Syntax Error: left over tokens");
                 }
             },
-            Err(_) => println!("Syntax Error")
+            Err(message) => println!("Syntax Error: {}", message)
         }
     }
 
@@ -79,11 +84,7 @@ impl Parser {
             _ => {
                 // Atoms -> Atom Atoms
                 let atom = try!(self.parse_atom());
-                let mut atom_value = atom.value;
-                if !self.is_quoted {
-                    atom_value = try!(eval(atom_value));
-                    println!("eval( {} ) -> {}", atom.parsed_tree, atom_value);
-                } 
+                let atom_value = try!(self.atom_value(&atom));
 
                 let mut atoms = try!(self.parse_atoms());
                 let mut atoms_tree = match atoms.parsed_tree {
@@ -147,7 +148,7 @@ impl Parser {
         if self.tokens.pop() != Some(Token::OpenParen) {
             return Err("list did not start with (");
         }
-        let mut body = try!(self.parse_list_body());
+        let body = try!(self.parse_list_body());
         if self.tokens.pop() != Some(Token::CloseParen) {
             return Err("list did not end with )")
         }
@@ -157,26 +158,63 @@ impl Parser {
 
 
     fn parse_list_body(&mut self) -> ParseResult<Vec<Atom>> {
-        // ListBody -> Atoms
-        let head_token = self.tokens.last().cloned();
-        match head_token {
-            Some(Token::Identifier(ref x)) if x == "let" => self.parse_let(),
-            Some(Token::Identifier(ref x)) if x == "let*" => self.parse_let_star(),
-            Some(Token::Identifier(ref x)) if x == "define" => self.parse_define(),
+        if self.tokens.is_empty() {
+            return Err("no tokens given to parse_list_body")
+        }
+        match self.head_token() {
+            Some(Token::Identifier(ref name)) if name == "let" => self.parse_let(),
+            Some(Token::Identifier(ref name)) if name == "let*" => self.parse_let_star(),
+            Some(Token::Identifier(ref name)) if name == "define" => self.parse_define(),
+
             Some(_) => self.parse_atoms(),
-            None => Err("empty list given as list body")
+            None => Err("empty list body")
         }
     }
 
-    fn parse_let(&mut self) -> ParseResult<Vec<Atom>> {
-        Err("let unimplemented")
+    fn parse_let(&self) -> ParseResult<Vec<Atom>> {
+        Err("`let` is unimplemented")
     }
-      
-    fn parse_let_star(&mut self) -> ParseResult<Vec<Atom>> {
-        Err("let* unimplemented")
+
+    fn parse_let_star(&self) -> ParseResult<Vec<Atom>> {
+        Err("`let*` is unimplemented")
     }
-    
+
     fn parse_define(&mut self) -> ParseResult<Vec<Atom>> {
-        Err("define unimplemented")
+        // define <id> <expr>
+        self.tokens.pop();
+
+        match self.tokens.pop() {
+            Some(Token::Identifier(ref name)) => {
+                let atom = try!(self.parse_atom());
+                let atom_value = try!(self.atom_value(&atom));
+                self.scope.set(name.to_string(), atom_value);
+                Ok(Parsed{
+                    value: vec![],
+                    parsed_tree: Atom::List(vec![Atom::Identifier("define".to_string()),
+                                                Atom::Identifier(name.clone()), 
+                                                atom.parsed_tree])
+                })
+            },
+            Some(_) => Err("define target must be an identifier"),
+            None => Err("no arguments passed to define")
+        }
+    }
+
+    fn head_token(&self) -> Option<Token> {
+        if self.tokens.is_empty() {
+            None
+        } else {
+            Some(self.tokens[self.tokens.len() - 1].clone())
+        }
+    }
+
+    fn atom_value(&self, parsed: &Parsed<Atom>) -> Result<Atom, &'static str> {
+        if self.is_quoted {
+            Ok(parsed.value.clone())
+        } else {
+            let result =  try!(eval(&self.scope, parsed.value.clone()));
+            println!("eval( {} ) -> {}", parsed.parsed_tree, result);
+            Ok(result)
+        }
     }
 }

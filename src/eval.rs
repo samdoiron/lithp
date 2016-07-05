@@ -1,16 +1,31 @@
 use atom::Atom;
+use scope::Scope;
 use util::prepend;
 
-pub fn eval(atom: Atom) -> Result<Atom, &'static str> {
+const BUILT_INS: [&'static str; 8] = ["+", "*", "/", "-", "car", "cdr", 
+                                      "cons", "list"];
+
+pub fn eval(scope: &Scope<Atom>, atom: Atom) -> Result<Atom, &'static str> {
     match atom {
         Atom::Quoted(value) => Ok(*value),
-        Atom::Integer(_) | Atom::Identifier(_) => Ok(atom),
+        Atom::Integer(_) => Ok(atom),
+        Atom::Identifier(ref name) => try_get(scope, name),
         Atom::List(atoms) => {
             match atoms.split_first() {
                 Some((car, cdr)) => apply(car, cdr),
-                None => Err("eval() on empty list")
+                None => Ok(Atom::List(vec![]))
             }
         }
+    }
+}
+
+fn try_get(scope: &Scope<Atom>, name: &str) -> Result<Atom, &'static str> {
+    if BUILT_INS.contains(&name) {
+        return Ok(Atom::Identifier(name.to_string()));
+    }
+    match scope.get(name) {
+        Some(atom) => Ok(atom.clone()),
+        None => Err("reference to unbound identifier")
     }
 }
 

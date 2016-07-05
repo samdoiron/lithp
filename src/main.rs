@@ -1,5 +1,6 @@
 mod util;
 mod atom;
+mod scope;
 mod eval;
 mod tokenizer;
 mod parser;
