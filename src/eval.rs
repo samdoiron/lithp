@@ -36,6 +36,7 @@ impl Eval {
             Atom::List(atoms) => {
                 match atoms.split_first() {
                     Some((&Atom::Identifier(ref x), cdr)) if x == "let" => self.eval_let(cdr),
+                    Some((&Atom::Identifier(ref x), cdr)) if x == "let*" => self.eval_let_star(cdr),
                     Some((car, cdr)) => {
                         let mut evaluated_cdr = Vec::with_capacity(cdr.len());
                         for atom in cdr {
@@ -71,6 +72,31 @@ impl Eval {
         let old_scope = *maybe_old_scope.unwrap();
         mem::replace(&mut self.scope, old_scope);
         result
+    }
+
+    fn eval_let_star(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
+      let (binding_list, expressions) = match cdr.split_first() {
+            Some((binding_list, expressions))
+                if expressions.len() >= 1 => (binding_list, expressions),
+            Some(_) => return Err("invalid let format"),
+            None => return Err("empty let structure")
+        };
+
+        let mut new_scope = Scope::new();
+        let old_scope = mem::replace(&mut self.scope, new_scope);
+        self.scope.parent = Some(Box::new(old_scope));
+
+        let bindings = try!(extract_bindings(binding_list.clone()));
+        for (name, expression) in bindings {
+            let value = try!(self.eval_atom(expression));
+            self.scope.set(name, value);
+        }
+
+        let result = self.eval_atoms(Atom::List(expressions.to_vec()));
+        let maybe_old_scope = mem::replace(&mut self.scope.parent, None);
+        let old_scope = *maybe_old_scope.unwrap();
+        mem::replace(&mut self.scope, old_scope);
+        result   
     }
 
     fn try_get(&self, name: &str) -> Result<Atom, &'static str> {
