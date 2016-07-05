@@ -16,7 +16,6 @@ impl Eval {
     }
 
     pub fn eval_atoms(&mut self, atom: Atom) -> Result<Atom, &'static str> {
-        println!("eval_atoms( {} )", atom);
         match atom {
             Atom::List(atoms) => {
                 match atoms.into_iter().map(|a| self.eval_atom(a)).last() {
@@ -30,8 +29,7 @@ impl Eval {
     }
 
     fn eval_atom(&mut self, atom: Atom) -> Result<Atom, &'static str> {
-        let to_show = atom.clone();
-        let result = match atom {
+        match atom {
             Atom::Quoted(value) => Ok(*value),
             Atom::Integer(_) => Ok(atom),
             Atom::Identifier(ref name) => self.try_get(name),
@@ -48,9 +46,7 @@ impl Eval {
                     None => Ok(Atom::List(vec![]))
                 }
             }
-        };
-        println!("eval( {} ) -> {:?}", to_show, result);
-        result
+        }
     }
 
     fn eval_let(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
@@ -83,7 +79,7 @@ impl Eval {
         }
         match self.scope.get(name) {
             Some(atom) => Ok(atom.clone()),
-            None => Ok(Atom::Identifier(name.to_string()))
+            None => Err("unknown identifier")
         }
     }
 
@@ -104,8 +100,7 @@ impl Eval {
                     _ => Err("unknown function")
                 }
             },
-            other => {
-                println!("car is {:?}", car);
+            _ => {
                 Err("cannot apply non-identifier")
             }
         }
@@ -135,7 +130,7 @@ impl Eval {
     }
 
     fn extract_ints(&self, cdr: &[Atom]) -> Option<Vec<i64>> {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(cdr.len());
         for atom in cdr {
             match atom {
                 &Atom::Integer(val) => result.push(val),

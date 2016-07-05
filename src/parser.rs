@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter, Write};
 use tokenizer::Token;
 use atom::Atom;
 use util::prepend;
-use scope::Scope;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -74,7 +73,7 @@ impl Parser {
                 // Atoms -> Atom Atoms
                 let atom = try!(self.parse_atom());
 
-                let mut atoms = try!(self.parse_atoms());
+                let atoms = try!(self.parse_atoms());
                 let mut atoms_vec = match atoms {
                     Atom::List(val) => val,
                     _ => unreachable!()

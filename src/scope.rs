@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 #[derive(Debug)]
 struct Binding<V>{ name: String, value: V }
 
