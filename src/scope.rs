@@ -4,21 +4,16 @@ use std::rc::Rc;
 struct Binding<V>{ name: String, value: V }
 
 #[derive(Debug)]
-pub struct Scope<'a, V: 'a> {
-    pub parent: Option<Rc<&'a Scope<'a, V>>>,
+pub struct Scope<V> {
+    pub parent: Option<Box<Scope<V>>>,
     bindings: Vec<Binding<V>>
 }
 
 const SCOPE_SIZE_ESTIMATE: usize = 10;
 
-impl<'a, V> Scope<'a, V> {
-    pub fn new() -> Scope<'a, V> {
+impl<V> Scope<V> {
+    pub fn new() -> Scope<V> {
         Scope{parent: None, bindings: Vec::with_capacity(SCOPE_SIZE_ESTIMATE)}
-    }
-
-    pub fn new_child(&'a self) -> Scope<'a, V> {
-        Scope{parent: Some(Rc::new(self)),
-              bindings: Vec::with_capacity(SCOPE_SIZE_ESTIMATE)}
     }
 
     pub fn get(&self, name: &str) -> Option<&V> {

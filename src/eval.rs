@@ -1,20 +1,22 @@
 use atom::Atom;
 use scope::Scope;
 use util::prepend;
+use std::mem;
 
-const BUILT_INS: [&'static str; 9] = ["define", "+", "-", "*", "/", "cons",
-                                       "car", "cdr", "list"];
+const BUILT_INS: [&'static str; 10] = ["define", "+", "-", "*", "/", "cons",
+                                       "car", "cdr", "list", "let"];
 
-pub struct Eval<'a> {
-    scope: Scope<'a, Atom>
+pub struct Eval<> {
+    scope: Scope<Atom>
 }
 
-impl<'a> Eval<'a> {
-    pub fn new() -> Eval<'a> {
+impl Eval {
+    pub fn new() -> Eval {
         Eval{scope: Scope::new()}
     }
 
     pub fn eval_atoms(&mut self, atom: Atom) -> Result<Atom, &'static str> {
+        println!("eval_atoms( {} )", atom);
         match atom {
             Atom::List(atoms) => {
                 match atoms.into_iter().map(|a| self.eval_atom(a)).last() {
@@ -28,12 +30,14 @@ impl<'a> Eval<'a> {
     }
 
     fn eval_atom(&mut self, atom: Atom) -> Result<Atom, &'static str> {
-        match atom {
+        let to_show = atom.clone();
+        let result = match atom {
             Atom::Quoted(value) => Ok(*value),
             Atom::Integer(_) => Ok(atom),
             Atom::Identifier(ref name) => self.try_get(name),
             Atom::List(atoms) => {
                 match atoms.split_first() {
+                    Some((&Atom::Identifier(ref x), cdr)) if x == "let" => self.eval_let(cdr),
                     Some((car, cdr)) => {
                         let mut evaluated_cdr = Vec::with_capacity(cdr.len());
                         for atom in cdr {
@@ -44,7 +48,33 @@ impl<'a> Eval<'a> {
                     None => Ok(Atom::List(vec![]))
                 }
             }
+        };
+        println!("eval( {} ) -> {:?}", to_show, result);
+        result
+    }
+
+    fn eval_let(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
+        let (binding_list, expressions) = match cdr.split_first() {
+            Some((binding_list, expressions))
+                if expressions.len() >= 1 => (binding_list, expressions),
+            Some(_) => return Err("invalid let format"),
+            None => return Err("empty let structure")
+        };
+        let mut new_scope = Scope::new();
+        let bindings = try!(extract_bindings(binding_list.clone()));
+        for (name, expression) in bindings {
+            let value = try!(self.eval_atom(expression));
+            new_scope.set(name, value);
         }
+        // WARNING: Super tricky! Probably should refactor out of impl to fix
+        // this.
+        let old_scope = mem::replace(&mut self.scope, new_scope);
+        self.scope.parent = Some(Box::new(old_scope));
+        let result = self.eval_atoms(Atom::List(expressions.to_vec()));
+        let maybe_old_scope = mem::replace(&mut self.scope.parent, None);
+        let old_scope = *maybe_old_scope.unwrap();
+        mem::replace(&mut self.scope, old_scope);
+        result
     }
 
     fn try_get(&self, name: &str) -> Result<Atom, &'static str> {
@@ -156,5 +186,31 @@ impl<'a> Eval<'a> {
             },
             _ => Err("first param of define must be an identifier")
         }
+    }
+}
+
+fn extract_bindings(atom_list: Atom) -> Result<Vec<(String, Atom)>, &'static str> {
+    match atom_list {
+        Atom::List(atoms) => {
+            let mut bindings = Vec::with_capacity(atoms.len());
+            for atom in atoms {
+                match atom {
+                    Atom::List(binding) => {
+                        if binding.len() != 2 {
+                            return Err("binding must have length 2");
+                        }
+                        match (&binding[0], &binding[1]) {
+                            (&Atom::Identifier(ref name), value) => {
+                                bindings.push((name.clone(), value.clone()));
+                            },
+                            _ => return Err("binding must start with an identifier")
+                        }
+                    },
+                    _ => return Err("binding must be a list")
+                }
+            }
+            Ok(bindings)
+        }, 
+        _ => Err("bindings must be in a list")
     }
 }

@@ -6,10 +6,9 @@ use util::prepend;
 use scope::Scope;
 
 #[derive(Debug)]
-pub struct Parser<'a> {
+pub struct Parser {
     tokens: Vec<Token>,
     is_quoted: bool,
-    scope: Scope<'a, Atom>
 }
 
 impl Display for Atom {
@@ -36,12 +35,11 @@ impl Display for Atom {
 
 type ParseResult = Result<Atom, &'static str>;
 
-impl<'a> Parser<'a> {
-    pub fn new(tokens: Vec<Token>) -> Parser<'a> {
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Parser {
         Parser {
             tokens: tokens,
-            is_quoted: false,
-            scope: Scope::new()
+            is_quoted: false
         }
     }
 
