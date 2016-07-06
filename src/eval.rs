@@ -40,18 +40,19 @@ impl Eval {
             Atom::Identifier(ref name) => self.try_get(name),
             Atom::List(atoms) => {
                 match atoms.split_first() {
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "let" => return self.eval_let(cdr),
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "let*" => return self.eval_let_star(cdr),
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "define" => return  self.eval_define(cdr),
-                    _ => ()
-                };
-                let mut evaluated = Vec::with_capacity(atoms.len());
-                for atom in atoms {
-                    evaluated.push(try!(self.eval_atom(atom)));
-                }
-                match evaluated.split_first() {
-                    Some((car, cdr)) => apply(&car, &cdr),
-                    None => Err("invalid empty expression")
+                    Some((&Atom::Identifier(ref x), cdr)) if x == "let" => self.eval_let(cdr),
+                    Some((&Atom::Identifier(ref x), cdr)) if x == "let*" => self.eval_let_star(cdr),
+                    Some((&Atom::Identifier(ref x), cdr)) if x == "define" => self.eval_define(cdr),
+                    _ => {
+                        let mut evaluated = Vec::with_capacity(atoms.len());
+                        for atom in atoms.clone() {
+                            evaluated.push(try!(self.eval_atom(atom)));
+                        }
+                        match evaluated.split_first() {
+                            Some((car, cdr)) => apply(&car, &cdr),
+                            None => Err("invalid empty expression")
+                        }
+                    }
                 }
             }
         };
