@@ -1,17 +1,15 @@
-#[derive(Debug)]
-struct Binding<V>{ name: String, value: V }
+use std::collections::HashMap;
+use std::fmt::Display;
 
 #[derive(Debug)]
 pub struct Scope<V> {
     pub parent: Option<Box<Scope<V>>>,
-    bindings: Vec<Binding<V>>
+    bindings: HashMap<String, V>
 }
 
-const SCOPE_SIZE_ESTIMATE: usize = 10;
-
-impl<V> Scope<V> {
+impl<V: Display> Scope<V> {
     pub fn new() -> Scope<V> {
-        Scope{parent: None, bindings: Vec::with_capacity(SCOPE_SIZE_ESTIMATE)}
+        Scope{parent: None, bindings: HashMap::new()}
     }
 
     pub fn get(&self, name: &str) -> Option<&V> {
@@ -19,11 +17,11 @@ impl<V> Scope<V> {
     }
 
     pub fn set(&mut self, name: String, value: V) {
-        self.bindings.push(Binding{name: name, value: value});
+        self.bindings.insert(name, value);
     }
 
     fn get_local(&self, name: &str) -> Option<&V> {
-        self.bindings.iter().find(|b| b.name == name).map(|b| &b.value)
+        self.bindings.get(name)
     }
 
     fn get_from_parent(&self, name: &str) -> Option<&V> {

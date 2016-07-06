@@ -88,29 +88,29 @@ impl Parser {
         if self.tokens.len() == 0 {
             return Err("no tokens given to parse_atom");
         }
-        let first_token = self.tokens[self.tokens.len() - 1].clone();
 
-        match first_token {
-            Token::Quote => {
+        match self.head_token() {
+            Some(Token::Quote) => {
                 // Atom -> ' Atom
                 self.tokens.pop();
                 let atom = try!(self.parse_atom());
                 Ok(Atom::Quoted(Box::new(atom)))
             },
-            Token::OpenParen => {
+            Some(Token::OpenParen) => {
                 // Atom -> List
                 self.parse_list()
             },
-            Token::Identifier(name) => {
+            Some(Token::Identifier(name)) => {
                 // Atom -> id
                 self.tokens.pop();
                 Ok(Atom::Identifier(name))
             },
-            Token::Integer(number) => {
+            Some(Token::Integer(number)) => {
                 // Atom -> int
                 self.tokens.pop();
                 Ok(Atom::Integer(number))
             },
+            None => Err("tried to parse empty atom"),
             _ => Err("unexpected token in parse_atom")
         }
     }
