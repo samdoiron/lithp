@@ -40,9 +40,11 @@ impl Eval {
             Atom::Identifier(ref name) => self.try_get(name),
             Atom::List(atoms) => {
                 match atoms.split_first() {
+                    // Macros, which have special evaluation rules
                     Some((&Atom::Identifier(ref x), cdr)) if x == "let" => self.eval_let(cdr),
                     Some((&Atom::Identifier(ref x), cdr)) if x == "let*" => self.eval_let_star(cdr),
                     Some((&Atom::Identifier(ref x), cdr)) if x == "define" => self.eval_define(cdr),
+                    Some((&Atom::Identifier(ref x), cdr)) if x == "set!" => self.eval_set(cdr),
                     _ => {
                         let mut evaluated = Vec::with_capacity(atoms.len());
                         for atom in atoms.clone() {
@@ -106,6 +108,23 @@ impl Eval {
         }
     }
 
+    fn eval_set(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
+        println!("eval( let! ) -> let!");
+        if cdr.len() != 2 { return Err("wrong number of arguments for set! ")}
+        match cdr[0] {
+            Atom::Identifier(ref name) => {
+                match self.scope.get(name) {
+                    Some(old_value) => {
+                        self.scope.set(name.clone(), cdr[1].clone());
+                        return Ok(old_value.clone());
+                    },
+                    None => Err("attempt to set! unbound identifier")
+                }
+            },
+            _ => Err("first parameter of set! must be an identifier")
+        }
+    }
+
     fn push_scope(&mut self, new_scope: Scope<Atom>) {
         let old_scope = mem::replace(&mut self.scope, new_scope);
         self.scope.parent = Some(Box::new(old_scope));
@@ -119,7 +138,7 @@ impl Eval {
 
     fn try_get(&self, name: &str) -> Result<Atom, &'static str> {
         match self.scope.get(name) {
-            Some(atom) => Ok(atom.clone()),
+            Some(atom) => Ok(atom),
             None => {
                 if BUILT_INS.contains(&name) {
                     Ok(Atom::Identifier(name.to_string()))

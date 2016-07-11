@@ -18,13 +18,13 @@ fn main() {
         .expect("invalid tokens given");
     let result = match Parser::new(tokens).parse() {
         Ok(ast) => Eval::new().eval_atoms(ast),
-        Err(_) => {
-            println!("Syntax Error");
+        Err(msg) => {
+            println!("Syntax Error: {}", msg);
             return;
         }
     };
     match result {
-        Err(_) => println!("Evaluation Error"),
+        Err(msg) => println!("Evaluation Error: {}", msg),
         _ => ()
     }
 }
