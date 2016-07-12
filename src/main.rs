@@ -7,7 +7,7 @@ mod parser;
 
 use tokenizer::tokenize;
 use parser::Parser;
-use eval::Eval;
+use eval::eval;
 use std::io::{self, Read};
 
 fn main() {
@@ -17,7 +17,7 @@ fn main() {
     let tokens = tokenize(&program)
         .expect("invalid tokens given");
     let result = match Parser::new(tokens).parse() {
-        Ok(ast) => Eval::new().eval_atoms(ast),
+        Ok(ast) => eval(ast),
         Err(msg) => {
             println!("Syntax Error: {}", msg);
             return;

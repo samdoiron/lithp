@@ -22,6 +22,7 @@ impl Display for Atom {
                 try!(fmt.write_str(")"));
                 Ok(())
             },
+            &Atom::Lambda(_) => fmt.write_str("<lambda>"),
             &Atom::Identifier(ref name) => name.fmt(fmt),
             &Atom::Integer(num) => num.fmt(fmt),
             &Atom::Quoted(ref atom) => {
@@ -91,22 +92,16 @@ impl Parser {
 
         match self.head_token() {
             Some(Token::Quote) => {
-                // Atom -> ' Atom
                 self.tokens.pop();
                 let atom = try!(self.parse_atom());
                 Ok(Atom::Quoted(Box::new(atom)))
             },
-            Some(Token::OpenParen) => {
-                // Atom -> List
-                self.parse_list()
-            },
+            Some(Token::OpenParen) => self.parse_list(),
             Some(Token::Identifier(name)) => {
-                // Atom -> id
                 self.tokens.pop();
                 Ok(Atom::Identifier(name))
             },
             Some(Token::Integer(number)) => {
-                // Atom -> int
                 self.tokens.pop();
                 Ok(Atom::Integer(number))
             },
@@ -116,7 +111,6 @@ impl Parser {
     }
 
     fn parse_list(&mut self) -> ParseResult {
-        // List -> ( ListBody )
         if self.tokens.pop() != Some(Token::OpenParen) {
             return Err("list did not start with (");
         }

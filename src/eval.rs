@@ -1,150 +1,163 @@
-use atom::Atom;
-use scope::Scope;
+use atom::{Atom, Closure};
+use scope::{ScopeRef};
 use util::prepend;
-use std::mem;
+use scope::{new_child_scope, new_scope};
 
-const BUILT_INS: [&'static str; 11] = ["define", "+", "-", "*", "/", "cons",
-                                       "car", "cdr", "list", "let", "let*"];
+const BUILT_INS: [&'static str; 12] = ["define", "+", "-", "*", "/", "cons",
+                                       "car", "cdr", "list", "let", "let*",
+                                       "lambda"];
 
-pub struct Eval<> {
-    scope: Scope<Atom>
+
+pub fn eval(atom: Atom) -> Result<Atom, &'static str> {
+    eval_atoms(new_scope(), atom)
 }
 
-impl Eval {
-    pub fn new() -> Eval {
-        Eval{scope: Scope::new()}
-    }
+fn eval_atoms(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
+    let result = match atom {
+        Atom::List(atoms) => {
+            let mut evaluated = Vec::with_capacity(atoms.len());
+            for atom in atoms {
+                evaluated.push(try!(eval_atom(scope.clone(), atom)));
+            }
+            match evaluated.last() {
+                Some(value) => Ok(value.clone()),
+                None => Err("eval atoms on empty list")
+            }
+        },
+        _ => Err("eval_atoms must be called with atom list")
+    };
+    result
+}
 
-    pub fn eval_atoms(&mut self, atom: Atom) -> Result<Atom, &'static str> {
-        let result = match atom {
-            Atom::List(atoms) => {
-                let mut evaluated = Vec::with_capacity(atoms.len());
-                for atom in atoms {
-                    evaluated.push(try!(self.eval_atom(atom)));
-                }
-                match evaluated.last() {
-                    Some(value) => Ok(value.clone()),
-                    None => Err("eval atoms on empty list")
-                }
-            },
-            _ => Err("eval_atoms must be called with atom list")
-        };
-        result
-    }
-
-    fn eval_atom(&mut self, atom: Atom) -> Result<Atom, &'static str> {
-        let original = atom.clone();
-        let result = match atom {
-            Atom::Quoted(value) => Ok(*value),
-            Atom::Integer(_) => Ok(atom),
-            Atom::Identifier(ref name) => self.try_get(name),
-            Atom::List(atoms) => {
-                match atoms.split_first() {
-                    // Macros, which have special evaluation rules
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "let" => self.eval_let(cdr),
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "let*" => self.eval_let_star(cdr),
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "define" => self.eval_define(cdr),
-                    Some((&Atom::Identifier(ref x), cdr)) if x == "set!" => self.eval_set(cdr),
-                    _ => {
-                        let mut evaluated = Vec::with_capacity(atoms.len());
-                        for atom in atoms.clone() {
-                            evaluated.push(try!(self.eval_atom(atom)));
-                        }
-                        match evaluated.split_first() {
-                            Some((car, cdr)) => apply(&car, &cdr),
-                            None => Err("invalid empty expression")
-                        }
+fn eval_atom(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
+    let original = atom.clone();
+    let result = match atom {
+        Atom::Quoted(value) => Ok(*value),
+        Atom::Integer(_) | Atom::Lambda(_) => Ok(atom),
+        Atom::Identifier(ref name) => try_get(scope, name),
+        Atom::List(atoms) => {
+            match atoms.split_first() {
+                // Macros / syntax rules, which have special evaluation
+                Some((&Atom::Identifier(ref x), cdr)) if x == "let" => eval_let(scope, cdr),
+                Some((&Atom::Identifier(ref x), cdr)) if x == "let*" => eval_let_star(scope, cdr),
+                Some((&Atom::Identifier(ref x), cdr)) if x == "define" => eval_define(scope, cdr),
+                Some((&Atom::Identifier(ref x), cdr)) if x == "set!" => eval_set(scope, cdr),
+                Some((&Atom::Identifier(ref x), cdr)) if x == "lambda" => eval_lambda(scope, cdr),
+                _ => {
+                    let mut evaluated = Vec::with_capacity(atoms.len());
+                    for atom in atoms.clone() {
+                        evaluated.push(try!(eval_atom(scope.clone(), atom)));
+                    }
+                    match evaluated.split_first() {
+                        Some((car, cdr)) => apply(&car, &cdr),
+                        None => Err("invalid empty expression")
                     }
                 }
             }
-        };
-        if let &Ok(ref evaluated) = &result {
-            println!("eval( {} ) -> {}", original, evaluated)
+        },
+    };
+    if let &Ok(ref evaluated) = &result {
+        println!("eval( {} ) -> {}", original, evaluated)
+    }
+    result
+}
+
+fn eval_let(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
+    println!("eval( let ) -> let");
+    let (binding_list, expressions) = try!(split_let_body(cdr));
+    let new_scope = new_child_scope(&scope);
+    let bindings = try!(extract_bindings(binding_list.clone()));
+    for (name, expression) in bindings {
+        let value = try!(eval_atom(scope.clone(), expression));
+        new_scope.borrow_mut().set_local(&name, value);
+    }
+    
+    let result = eval_atoms(new_scope, Atom::List(expressions.to_vec()));
+    result
+}
+
+fn eval_let_star(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
+    println!("eval( let* ) -> let*");
+    let (binding_list, expressions) = try!(split_let_body(cdr));
+    let new_scope = new_child_scope(&scope);
+    let bindings = try!(extract_bindings(binding_list.clone()));
+    for (name, expression) in bindings {
+        let value = try!(eval_atom(new_scope.clone(), expression));
+        new_scope.borrow_mut().set_local(&name, value);
+    }
+
+    let result = eval_atoms(new_scope, Atom::List(expressions.to_vec()));
+    result   
+}
+
+fn eval_define(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
+    println!("eval( define ) -> define");
+    if cdr.len() != 2 { return Err("wrong number of arguments for define") }
+    match cdr[0] {
+        Atom::Identifier(ref name) => {
+            let evaluated = try!(eval_atom(scope.clone(), cdr[1].clone()));
+            scope.borrow_mut().set_local(&name, evaluated);
+            Ok(Atom::Identifier("".to_string()))
+        },
+        _ => Err("first param of define must be an identifier")
+    }
+}
+
+fn eval_set(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
+    println!("eval( set! ) -> set!");
+    if cdr.len() != 2 { return Err("wrong number of arguments for set! ")}
+    match cdr[0] {
+        Atom::Identifier(ref name) => {
+            let existing = { scope.borrow().get(name) };
+            match existing {
+                Some(old_value) => {
+                    let evaluated = try!(eval_atom(scope.clone(), cdr[1].clone()));
+                    scope.borrow_mut().set_inherited(&name, evaluated);
+                    Ok(old_value)
+                },
+                None => Err("attempt to set! undefined value")
+            }
+        },
+        _ => Err("first parameter of set! must be an identifier")
+    }
+}
+
+macro_rules! extract {
+    ( $t:path, $cdr:expr ) => {{
+        let cdr = $cdr;
+        let mut result = Vec::with_capacity(cdr.len());
+        for atom in cdr {
+            match atom {
+                &$t(ref val) => result.push(val.clone()),
+                _ => return Err("invalid format")
+            }
         }
         result
+    }}
+}
+
+fn eval_lambda(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
+    match cdr.split_first() {
+        Some((&Atom::List(ref params), ref body)) if !body.is_empty() => {
+            let param_names = extract!(Atom::Identifier, params);
+            Ok(Atom::Lambda(Closure{
+                scope: new_child_scope(&scope),
+                parameters: param_names,
+                body: Box::new(Atom::List(body.to_vec()))
+            }))
+        },
+        _ => Err("invalid lambda")
     }
+}
 
-    fn eval_let(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
-        println!("eval( let ) -> let");
-        let (binding_list, expressions) = try!(split_let_body(cdr));
-        let mut new_scope = Scope::new();
-        let bindings = try!(extract_bindings(binding_list.clone()));
-        for (name, expression) in bindings {
-            let value = try!(self.eval_atom(expression));
-            new_scope.set(name, value);
-        }
-        
-        self.push_scope(new_scope);
-        let result = self.eval_atoms(Atom::List(expressions.to_vec()));
-        self.pop_scope();
-        result
-    }
-
-    fn eval_let_star(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
-        println!("eval( let* ) -> let*");
-        let (binding_list, expressions) = try!(split_let_body(cdr));
-        self.push_scope(Scope::new());
-        let bindings = try!(extract_bindings(binding_list.clone()));
-        for (name, expression) in bindings {
-            let value = try!(self.eval_atom(expression));
-            self.scope.set(name, value);
-        }
-
-        let result = self.eval_atoms(Atom::List(expressions.to_vec()));
-        self.pop_scope();
-        result   
-    }
-
-    fn eval_define(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
-        println!("eval( define ) -> define");
-        if cdr.len() != 2 { return Err("wrong number of arguments for define") }
-        match cdr[0] {
-            Atom::Identifier(ref name) => {
-                let evaluated = try!(self.eval_atom(cdr[1].clone()));
-                self.scope.set(name.clone(), evaluated);
-                Ok(Atom::Identifier("".to_string())) // NOTE: Weird.
-            },
-            _ => Err("first param of define must be an identifier")
-        }
-    }
-
-    fn eval_set(&mut self, cdr: &[Atom]) -> Result<Atom, &'static str> {
-        println!("eval( let! ) -> let!");
-        if cdr.len() != 2 { return Err("wrong number of arguments for set! ")}
-        match cdr[0] {
-            Atom::Identifier(ref name) => {
-                match self.scope.get(name) {
-                    Some(old_value) => {
-                        self.scope.set(name.clone(), cdr[1].clone());
-                        return Ok(old_value.clone());
-                    },
-                    None => Err("attempt to set! unbound identifier")
-                }
-            },
-            _ => Err("first parameter of set! must be an identifier")
-        }
-    }
-
-    fn push_scope(&mut self, new_scope: Scope<Atom>) {
-        let old_scope = mem::replace(&mut self.scope, new_scope);
-        self.scope.parent = Some(Box::new(old_scope));
-    }
-
-    fn pop_scope(&mut self) {
-        let maybe_old_scope = mem::replace(&mut self.scope.parent, None);
-        let old_scope = *maybe_old_scope.unwrap();
-        mem::replace(&mut self.scope, old_scope);
-    }
-
-    fn try_get(&self, name: &str) -> Result<Atom, &'static str> {
-        match self.scope.get(name) {
-            Some(atom) => Ok(atom),
-            None => {
-                if BUILT_INS.contains(&name) {
-                    Ok(Atom::Identifier(name.to_string()))
-                } else {
-                    Err("unknown identifier")
-                }
+fn try_get(scope: ScopeRef<Atom>, name: &str) -> Result<Atom, &'static str> {
+    match scope.borrow().get(name) {
+        Some(atom) => Ok(atom),
+        None => {
+            if BUILT_INS.contains(&name) {
+                Ok(Atom::Identifier(name.to_string()))
+            } else {
+                Err("unknown identifier")
             }
         }
     }
@@ -166,8 +179,21 @@ fn apply(func: &Atom, args: &[Atom]) -> Result<Atom, &'static str> {
                 _ => Err("unknown function")
             }
         },
-        _ => Err("cannot apply non-identifier")
+        &Atom::Lambda(ref closure) => apply_closure(closure, args),
+        _ => Err("cannot apply value of given type")
     }
+}
+
+fn apply_closure(closure: &Closure, args: &[Atom]) -> Result<Atom, &'static str> {
+    if closure.parameters.len() != args.len() { 
+        return Err("invalid closure arity")
+    }
+    
+    let call_scope = new_child_scope(&closure.scope);
+    for (i, arg) in args.iter().enumerate() {
+        call_scope.borrow_mut().set_local(&closure.parameters[i], arg.clone());
+    }
+    return eval_atoms(call_scope, *closure.body.clone());
 }
 
 fn car(cdr: &[Atom]) -> Result<Atom, &'static str> {
@@ -179,14 +205,11 @@ fn car(cdr: &[Atom]) -> Result<Atom, &'static str> {
 }
 
 fn cdr(cdr: &[Atom]) -> Result<Atom, &'static str> {
-    if let Some(&Atom::List(ref items)) = cdr.first() {
-        if items.len() != 0 {
+    match cdr.first() {
+        Some(&Atom::List(ref items)) if !items.is_empty() => {
             Ok(Atom::List(items[1..].to_vec()))
-        } else {
-            Err("cdr on empty list")
-        }
-    } else {
-        Err("cdr invalid param")
+        },
+        _ => Err("invalid cdr param")
     }
 }
 
@@ -205,35 +228,18 @@ fn list(cdr: &[Atom]) -> Result<Atom, &'static str> {
 fn math(start: i64, reduce: &Fn(i64, &i64) -> i64, cdr: &[Atom])
     -> Result<Atom, &'static str> {
     if cdr.len() == 0 { return Err("attempted math on empty list") }
-    match extract_ints(cdr) {
-        Some(ints) => Ok(Atom::Integer(ints.iter().fold(start, reduce))),
-        None => Err("attempted math on non-integer")
-    }
+    let ints = extract!(Atom::Integer, cdr);
+    Ok(Atom::Integer(ints.iter().fold(start, reduce)))
 }
 
-fn math_first(reduce: &Fn(i64, &i64) -> i64, cdr: &[Atom])
+fn math_first(reduce: &Fn(i64, &i64) -> i64, cdr: &[Atom]) 
     -> Result<Atom, &'static str> {
-    match extract_ints(cdr) {
-        Some(ints) => {
-            if ints.len() == 0 {
-                Err("attempted math on empty list")
-            } else {
-                Ok(Atom::Integer(ints[1..].iter().fold(ints[0], reduce)))
-            }
-        }
-        None => Err("attempted math on non-integer")
+    let ints = extract!(Atom::Integer, cdr);
+    if !ints.is_empty() {
+        Ok(Atom::Integer(ints[1..].iter().fold(ints[0], reduce)))
+    } else {
+        Err("attempted math on empty list")
     }
-}
-
-fn extract_ints(cdr: &[Atom]) -> Option<Vec<i64>> {
-    let mut result = Vec::with_capacity(cdr.len());
-    for atom in cdr {
-        match atom {
-            &Atom::Integer(val) => result.push(val),
-            _ => return None
-        }
-    }
-    Some(result)
 }
 
 fn extract_bindings(atom_list: Atom) -> Result<Vec<(String, Atom)>, &'static str> {
@@ -241,7 +247,6 @@ fn extract_bindings(atom_list: Atom) -> Result<Vec<(String, Atom)>, &'static str
         Atom::List(a) => a,
         _ => return Err("bindings must be in a list")
     };
-
     let mut bindings = Vec::with_capacity(atoms.len());
     for atom in atoms {
         bindings.push(try!(extract_binding(atom)));
@@ -250,16 +255,14 @@ fn extract_bindings(atom_list: Atom) -> Result<Vec<(String, Atom)>, &'static str
 }
 
 fn extract_binding(atom: Atom) -> Result<(String, Atom), &'static str> {
-    if let Atom::List(binding) = atom {
-        if binding.len() != 2 {
-            return Err("binding must have length 2")
-        }
-        match (&binding[0], &binding[1]) {
-            (&Atom::Identifier(ref name), value) => Ok((name.clone(), value.clone())),
-            _ => Err("binding must start with an identifier")
-        }
-    } else {
-        Err("binding must be a list")
+    match atom {
+        Atom::List(ref binding) if binding.len() == 2 => {
+            match (&binding[0], &binding[1]) {
+                (&Atom::Identifier(ref name), value) => Ok((name.clone(), value.clone())),
+                _ => Err("binding must start with an identifier")
+            }
+        },
+        _ => Err("invalid binding")
     }
 }
 
