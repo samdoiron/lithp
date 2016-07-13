@@ -12,8 +12,7 @@ use std::io::{self, Read};
 
 fn main() {
     let mut program = String::new();
-    io::stdin().read_to_string(&mut program)
-        .expect("failed to read from stdin");
+    io::stdin().read_to_string(&mut program).unwrap();
     let tokens = tokenize(&program)
         .expect("invalid tokens given");
     let result = match Parser::new(tokens).parse() {

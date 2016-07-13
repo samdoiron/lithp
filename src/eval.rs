@@ -137,6 +137,7 @@ macro_rules! extract {
 }
 
 fn eval_lambda(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
+    println!("eval( lambda ) -> lambda");
     match cdr.split_first() {
         Some((&Atom::List(ref params), ref body)) if !body.is_empty() => {
             let param_names = extract!(Atom::Identifier, params);

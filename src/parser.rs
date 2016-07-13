@@ -4,6 +4,8 @@ use tokenizer::Token;
 use atom::Atom;
 use util::prepend;
 
+const ATOM_COUNT_ESTIMATE: usize = 10;
+
 #[derive(Debug)]
 pub struct Parser {
     tokens: Vec<Token>,
@@ -47,7 +49,6 @@ impl Parser {
         match self.parse_atoms() {
             Ok(value) => {
                 if self.tokens.len() > 0 {
-                    // Left over tokens not part of any production.
                     Err("Syntax Error: left over tokens")
                 } else {
                     Ok(value)
@@ -60,7 +61,7 @@ impl Parser {
     fn parse_atoms(&mut self) -> ParseResult {
         if self.tokens.len() == 0 {
             // Atoms ->
-            return Ok(Atom::List(vec![]))
+            return Ok(Atom::List(Vec::with_capacity(ATOM_COUNT_ESTIMATE)))
         }
         
         let first_token = self.tokens[self.tokens.len() - 1].clone();
@@ -68,7 +69,7 @@ impl Parser {
         match first_token {
             Token::CloseParen => {
                 // Atoms ->
-                Ok(Atom::List(vec![]))
+                Ok(Atom::List(Vec::with_capacity(ATOM_COUNT_ESTIMATE)))
             },
             _ => {
                 // Atoms -> Atom Atoms
@@ -79,41 +80,25 @@ impl Parser {
                     Atom::List(val) => val,
                     _ => unreachable!()
                 };
-
                 Ok(Atom::List(prepend(atom, &mut atoms_vec)))
             }
         }
     }
 
     fn parse_atom(&mut self) -> ParseResult {
-        if self.tokens.len() == 0 {
-            return Err("no tokens given to parse_atom");
-        }
-
-        match self.head_token() {
-            Some(Token::Quote) => {
-                self.tokens.pop();
+        match self.tokens.pop() {
+            Some(Token::Quote) | None => {
                 let atom = try!(self.parse_atom());
                 Ok(Atom::Quoted(Box::new(atom)))
             },
             Some(Token::OpenParen) => self.parse_list(),
-            Some(Token::Identifier(name)) => {
-                self.tokens.pop();
-                Ok(Atom::Identifier(name))
-            },
-            Some(Token::Integer(number)) => {
-                self.tokens.pop();
-                Ok(Atom::Integer(number))
-            },
-            None => Err("tried to parse empty atom"),
+            Some(Token::Identifier(name)) => Ok(Atom::Identifier(name)),
+            Some(Token::Integer(number)) => Ok(Atom::Integer(number)),
             _ => Err("unexpected token in parse_atom")
         }
     }
 
     fn parse_list(&mut self) -> ParseResult {
-        if self.tokens.pop() != Some(Token::OpenParen) {
-            return Err("list did not start with (");
-        }
         let body = try!(self.parse_list_body());
         if self.tokens.pop() != Some(Token::CloseParen) {
             return Err("list did not end with )")
