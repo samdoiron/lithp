@@ -30,7 +30,7 @@ impl Display for Atom {
             &Atom::Quoted(ref atom) => {
                 try!(fmt.write_str("' "));
                 atom.fmt(fmt)
-            }
+            },
         }
     }
 }

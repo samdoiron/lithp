@@ -24,6 +24,6 @@ fn main() {
     };
     match result {
         Err(msg) => println!("Evaluation Error: {}", msg),
-        _ => ()
+        Ok(result) => println!("{}", result)
     }
 }

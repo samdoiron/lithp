@@ -3,13 +3,24 @@ use scope::{ScopeRef};
 use util::prepend;
 use scope::{new_child_scope, new_scope};
 
-const BUILT_INS: [&'static str; 12] = ["define", "+", "-", "*", "/", "cons",
+const BUILT_INS: [&'static str; 18] = ["define", "+", "-", "*", "/", "cons",
                                        "car", "cdr", "list", "let", "let*",
-                                       "lambda"];
+                                       "lambda", "=", "!=", ">",
+                                       "<", "equal?", "not"];
 
+fn lithp_true() -> Atom { Atom::Identifier("#t".to_string()) }
+fn lithp_false() -> Atom { Atom::Identifier("#f".to_string()) }
+
+type BasicResult<T> = Result<T, &'static str>;
 
 pub fn eval(atom: Atom) -> Result<Atom, &'static str> {
-    eval_atoms(new_scope(), atom)
+    let root_scope = new_scope();
+    {
+        let mut scope_borrow = (*root_scope).borrow_mut();
+        scope_borrow.set_local("#t", lithp_true());
+        scope_borrow.set_local("#f", lithp_false());
+    }
+    eval_atoms(root_scope, atom)
 }
 
 fn eval_atoms(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
@@ -43,6 +54,10 @@ fn eval_atom(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
                 Some((&Atom::Identifier(ref x), cdr)) if x == "define" => eval_define(scope, cdr),
                 Some((&Atom::Identifier(ref x), cdr)) if x == "set!" => eval_set(scope, cdr),
                 Some((&Atom::Identifier(ref x), cdr)) if x == "lambda" => eval_lambda(scope, cdr),
+                // For short circuiting
+                Some((&Atom::Identifier(ref x), cdr)) if x == "and" => eval_and(scope, cdr),
+                Some((&Atom::Identifier(ref x), cdr)) if x == "or" => eval_or(scope, cdr),
+                Some((&Atom::Identifier(ref x), cdr)) if x == "cond" => eval_cond(scope, cdr),
                 _ => {
                     let mut evaluated = Vec::with_capacity(atoms.len());
                     for atom in atoms.clone() {
@@ -151,6 +166,51 @@ fn eval_lambda(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str
     }
 }
 
+fn eval_and(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
+    println!("eval( and ) -> and");
+    if args.is_empty() { return Err("arguments to and may not be empty") }
+    for arg in args {
+        let evaluated = try!(eval_atom(scope.clone(), arg.clone()));
+        match evaluated {
+            Atom::Identifier(ref x) if x == "#f" => return Ok(lithp_false()),
+            Atom::Identifier(ref x) if x == "#t" => (),
+            _ => return Err("arguments to and must be booleans")
+        }
+    }
+    Ok(lithp_true())
+}
+
+fn eval_cond(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
+    println!("eval( cond ) -> cond");
+    for arg in args {
+        match arg {
+            &Atom::List(ref items) if items.len() == 2 => {
+                let evaluated_condition = try!(eval_atom(scope.clone(),
+                                               items[0].clone()));
+                if evaluated_condition == lithp_true() {
+                    return eval_atom(scope.clone(), items[1].clone());
+                }
+            },
+            _ => return Err("cond elements must be pairs")
+        }
+    }
+    Ok(lithp_false())
+}
+
+fn eval_or(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
+    println!("eval( or ) -> or");
+    if args.is_empty() { return Err("arguments to and may not be empty") }
+    for arg in args {
+        let evaluated = try!(eval_atom(scope.clone(), arg.clone()));
+        match evaluated {
+            Atom::Identifier(ref x) if x == "#t" => return Ok(lithp_true()),
+            Atom::Identifier(ref x) if x == "#f" => (),
+            _ => return Err("arguments to and must be booleans")
+        }
+    }
+    Ok(lithp_false())
+}
+
 fn try_get(scope: ScopeRef<Atom>, name: &str) -> Result<Atom, &'static str> {
     match scope.borrow().get(name) {
         Some(atom) => Ok(atom),
@@ -158,6 +218,7 @@ fn try_get(scope: ScopeRef<Atom>, name: &str) -> Result<Atom, &'static str> {
             if BUILT_INS.contains(&name) {
                 Ok(Atom::Identifier(name.to_string()))
             } else {
+                println!("unknown identifier is {}", name);
                 Err("unknown identifier")
             }
         }
@@ -177,6 +238,11 @@ fn apply(func: &Atom, args: &[Atom]) -> Result<Atom, &'static str> {
                 "cdr" => cdr(args),
                 "cons" => cons(args),
                 "list" => list(args),
+                ">" => gt(args),
+                "<" => lt(args),
+                "=" => eq(args),
+                "equal?" => equal(args),
+                "not" => not(args),
                 _ => Err("unknown function")
             }
         },
@@ -243,7 +309,47 @@ fn math_first(reduce: &Fn(i64, &i64) -> i64, cdr: &[Atom])
     }
 }
 
-fn extract_bindings(atom_list: Atom) -> Result<Vec<(String, Atom)>, &'static str> {
+fn gt(args: &[Atom]) -> BasicResult<Atom> {
+    binary_int_predicate(args, &|a, b| a > b)
+}
+
+
+fn lt(args: &[Atom]) -> BasicResult<Atom> {
+    binary_int_predicate(args, &|a, b| a < b)
+}
+
+fn eq(args: &[Atom]) -> BasicResult<Atom> {
+    binary_int_predicate(args, &|a, b| a == b)
+}
+
+fn binary_int_predicate(args: &[Atom], op: &Fn(i64, i64) -> bool) -> BasicResult<Atom> {
+    if args.len() != 2 { return Err("invalid arity for binary number predicate") }
+    match (&args[0], &args[1]) {
+        (&Atom::Integer(one), &Atom::Integer(two)) => Ok(lithp_bool(op(one, two))),
+        _ => Err("invalid arguments to binary number predicate")
+    }
+}
+
+
+fn not(args: &[Atom]) -> BasicResult<Atom> {
+    if args.len() != 1 { return Err("invalid arity for not") }
+    match args[0] {
+        Atom::Identifier(ref val) if val == "#t" => Ok(lithp_false()),
+        Atom::Identifier(ref val) if val == "#f" => Ok(lithp_true()),
+        _ => Err("arguments to not must be booleans")
+    }
+}
+
+fn equal(args: &[Atom]) -> BasicResult<Atom> {
+    if args.len() != 2 { return Err("invalid arity for equal?") }
+    Ok(lithp_bool(args[0] == args[1]))
+}
+
+fn lithp_bool(value: bool) -> Atom {
+    if value { lithp_true() } else { lithp_false() }
+}
+
+fn extract_bindings(atom_list: Atom) -> BasicResult<Vec<(String, Atom)>> {
     let atoms = match atom_list {
         Atom::List(a) => a,
         _ => return Err("bindings must be in a list")
