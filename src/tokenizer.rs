@@ -9,25 +9,27 @@ pub enum Token {
 
 pub type TokenResult<T> = Result<T, &'static str>;
 
-// Input must be formatted so that each token is separated by a space.
 pub fn tokenize(program: &str) -> TokenResult<Vec<Token>> {
     let mut tokens = vec![];
-    for token in program.split_whitespace() {
-        let token = try!(match_token(token));
-        tokens.push(token);
+    let mut long_token = String::new();
+    for c in program.chars() {
+        if !long_token.is_empty() && (c == ')' || c == '(' || c == '\'' || c.is_whitespace()) {
+            tokens.push(try!(match_long_token(&long_token)));
+            long_token = String::new();
+        }
+        match c {
+            '(' => tokens.push(Token::OpenParen),
+            ')' => tokens.push(Token::CloseParen),
+            '\'' => tokens.push(Token::Quote),
+            x if x.is_whitespace() => (),
+            _ => long_token.push(c)
+        }
+    }
+    if !long_token.is_empty() {
+        tokens.push(try!(match_long_token(&long_token)));
     }
     tokens.reverse();
     Ok(tokens)
-}
-
-fn match_token(token: &str) -> TokenResult<Token> {
-    match token {
-        "(" => Ok(Token::OpenParen),
-        ")" => Ok(Token::CloseParen),
-        "'" => Ok(Token::Quote),
-        "" => Err("empty tokens are invalid"),
-        _   => match_long_token(token)
-    }
 }
 
 fn match_long_token(token: &str) -> TokenResult<Token> {

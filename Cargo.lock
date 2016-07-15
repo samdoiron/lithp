@@ -1,4 +1,12 @@
 [root]
 name = "lithp"
 version = "0.1.0"
+dependencies = [
+ "fnv 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "fnv"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 

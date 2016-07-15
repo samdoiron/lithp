@@ -30,8 +30,8 @@ fn eval_atoms(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
             for atom in atoms {
                 evaluated.push(try!(eval_atom(scope.clone(), atom)));
             }
-            match evaluated.last() {
-                Some(value) => Ok(value.clone()),
+            match evaluated.into_iter().last() {
+                Some(value) => Ok(value),
                 None => Err("eval atoms on empty list")
             }
         },
@@ -41,9 +41,8 @@ fn eval_atoms(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
 }
 
 fn eval_atom(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
-    let original = atom.clone();
-    let result = match atom {
-        Atom::Quoted(value) => { println!("eval( ' ) -> '");  Ok(*value) },
+    match atom {
+        Atom::Quoted(value) => { /*println!("eval( ' ) -> '");*/  Ok(*value) },
         Atom::Integer(_) | Atom::Lambda(_) => Ok(atom),
         Atom::Identifier(ref name) => try_get(scope, name),
         Atom::List(atoms) => {
@@ -70,15 +69,11 @@ fn eval_atom(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
                 }
             }
         },
-    };
-    if let &Ok(ref evaluated) = &result {
-        println!("eval( {} ) -> {}", original, evaluated)
     }
-    result
 }
 
 fn eval_let(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
-    println!("eval( let ) -> let");
+    //println!("eval( let ) -> let");
     let (binding_list, expressions) = try!(split_let_body(cdr));
     let new_scope = new_child_scope(&scope);
     let bindings = try!(extract_bindings(binding_list.clone()));
@@ -92,7 +87,7 @@ fn eval_let(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
 }
 
 fn eval_let_star(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
-    println!("eval( let* ) -> let*");
+    //println!("eval( let* ) -> let*");
     let (binding_list, expressions) = try!(split_let_body(cdr));
     let new_scope = new_child_scope(&scope);
     let bindings = try!(extract_bindings(binding_list.clone()));
@@ -106,7 +101,7 @@ fn eval_let_star(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static s
 }
 
 fn eval_define(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
-    println!("eval( define ) -> define");
+    //println!("eval( define ) -> define");
     if cdr.len() != 2 { return Err("wrong number of arguments for define") }
     match cdr[0] {
         Atom::Identifier(ref name) => {
@@ -119,7 +114,7 @@ fn eval_define(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str
 }
 
 fn eval_set(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
-    println!("eval( set! ) -> set!");
+    //println!("eval( set! ) -> set!");
     if cdr.len() != 2 { return Err("wrong number of arguments for set! ")}
     match cdr[0] {
         Atom::Identifier(ref name) => {
@@ -152,7 +147,7 @@ macro_rules! extract {
 }
 
 fn eval_lambda(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str> {
-    println!("eval( lambda ) -> lambda");
+    //println!("eval( lambda ) -> lambda");
     match cdr.split_first() {
         Some((&Atom::List(ref params), ref body)) if !body.is_empty() => {
             let param_names = extract!(Atom::Identifier, params);
@@ -167,7 +162,7 @@ fn eval_lambda(scope: ScopeRef<Atom>, cdr: &[Atom]) -> Result<Atom, &'static str
 }
 
 fn eval_and(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
-    println!("eval( and ) -> and");
+    //println!("eval( and ) -> and");
     if args.is_empty() { return Err("arguments to and may not be empty") }
     for arg in args {
         let evaluated = try!(eval_atom(scope.clone(), arg.clone()));
@@ -181,7 +176,7 @@ fn eval_and(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
 }
 
 fn eval_cond(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
-    println!("eval( cond ) -> cond");
+    //println!("eval( cond ) -> cond");
     for arg in args {
         match arg {
             &Atom::List(ref items) if items.len() == 2 => {
@@ -198,7 +193,7 @@ fn eval_cond(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
 }
 
 fn eval_or(scope: ScopeRef<Atom>, args: &[Atom]) -> BasicResult<Atom> {
-    println!("eval( or ) -> or");
+    //println!("eval( or ) -> or");
     if args.is_empty() { return Err("arguments to and may not be empty") }
     for arg in args {
         let evaluated = try!(eval_atom(scope.clone(), arg.clone()));
@@ -218,7 +213,7 @@ fn try_get(scope: ScopeRef<Atom>, name: &str) -> Result<Atom, &'static str> {
             if BUILT_INS.contains(&name) {
                 Ok(Atom::Identifier(name.to_string()))
             } else {
-                println!("unknown identifier is {}", name);
+                //println!("unknown identifier is {}", name);
                 Err("unknown identifier")
             }
         }
