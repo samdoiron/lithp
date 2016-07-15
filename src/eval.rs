@@ -43,7 +43,7 @@ fn eval_atoms(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
 fn eval_atom(scope: ScopeRef<Atom>, atom: Atom) -> Result<Atom, &'static str> {
     let original = atom.clone();
     let result = match atom {
-        Atom::Quoted(value) => Ok(*value),
+        Atom::Quoted(value) => { println!("eval( ' ) -> '");  Ok(*value) },
         Atom::Integer(_) | Atom::Lambda(_) => Ok(atom),
         Atom::Identifier(ref name) => try_get(scope, name),
         Atom::List(atoms) => {
